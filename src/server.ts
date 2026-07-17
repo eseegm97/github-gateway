@@ -4,25 +4,31 @@ import {
   isMainModule,
   writeResponseToNodeResponse,
 } from '@angular/ssr/node';
+import 'dotenv/config';
 import express from 'express';
 import { join } from 'node:path';
+import { env } from './server/env';
+import { apiRouter } from './server/routes';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
 
-/**
- * Example Express Rest API endpoints can be defined here.
- * Uncomment and define endpoints as necessary.
- *
- * Example:
- * ```ts
- * app.get('/api/{*splat}', (req, res) => {
- *   // Handle API request
- * });
- * ```
- */
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', env.corsOrigin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+
+  if (req.method.toUpperCase() === 'OPTIONS') {
+    res.status(204).send();
+    return;
+  }
+
+  next();
+});
+app.use(express.json());
+app.use('/api', apiRouter);
 
 /**
  * Serve static files from /browser
@@ -47,18 +53,22 @@ app.use((req, res, next) => {
     .catch(next);
 });
 
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const message = error instanceof Error ? error.message : 'Unexpected server error.';
+  res.status(500).json({ error: message });
+});
+
 /**
  * Start the server if this module is the main entry point, or it is ran via PM2.
  * The server listens on the port defined by the `PORT` environment variable, or defaults to 4000.
  */
 if (isMainModule(import.meta.url) || process.env['pm_id']) {
-  const port = process.env['PORT'] || 4000;
-  app.listen(port, (error) => {
+  app.listen(env.port, (error) => {
     if (error) {
       throw error;
     }
 
-    console.log(`Node Express server listening on http://localhost:${port}`);
+    console.log(`Node Express server listening on http://localhost:${env.port}`);
   });
 }
 

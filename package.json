@@ -4,10 +4,15 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "dev": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "serve:ssr:github-search": "node dist/github-search/server/server.mjs"
+    "test:frontend": "ng test --watch=false",
+    "test:backend": "vitest run src/server/tests",
+    "test:backend:watch": "vitest src/server/tests",
+    "serve:ssr:github-search": "node dist/github-search/server/server.mjs",
+    "start:prod": "node dist/github-search/server/server.mjs"
   },
   "private": true,
   "packageManager": "npm@11.16.0",
@@ -20,6 +25,7 @@
     "@angular/platform-server": "^22.0.0",
     "@angular/router": "^22.0.0",
     "@angular/ssr": "^22.0.7",
+    "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
