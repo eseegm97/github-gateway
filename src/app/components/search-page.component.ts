@@ -3,8 +3,9 @@ import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subject, from, of } from 'rxjs';
-import { catchError, debounceTime, distinctUntilChanged, finalize, switchMap } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { GithubUser } from '../models/github-user.model';
+import { mapApiErrorToMessage } from '../services/api-error.util';
 import { GithubApiService } from '../services/github-api.service';
 import { HistoryService } from '../services/history.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -50,6 +51,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
         @if (error()) {
           <div class="alert alert-danger mt-3 mb-0 py-2">{{ error() }}</div>
         }
+
+        @if (query().trim() && !error()) {
+          <div class="small text-secondary mt-3">
+            Showing {{ results().length }} of {{ totalCount() }} matches (page {{ currentPage() }}).
+          </div>
+        }
       </section>
 
       <section class="section-card p-3 p-md-4">
@@ -81,6 +88,25 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
               </li>
             }
           </ul>
+
+          <div class="d-flex flex-wrap gap-2 justify-content-end mt-3">
+            <button
+              class="btn btn-outline-secondary"
+              type="button"
+              (click)="goToPreviousPage()"
+              [disabled]="searching() || currentPage() <= 1"
+            >
+              Previous
+            </button>
+            <button
+              class="btn btn-outline-secondary"
+              type="button"
+              (click)="goToNextPage()"
+              [disabled]="searching() || !hasNextPage()"
+            >
+              Next
+            </button>
+          </div>
         }
       </section>
 
@@ -114,6 +140,9 @@ export class SearchPageComponent {
   readonly results = signal<GithubUser[]>([]);
   readonly searching = signal(false);
   readonly error = signal<string | null>(null);
+  readonly currentPage = signal(1);
+  readonly totalCount = signal(0);
+  readonly hasNextPage = signal(false);
 
   constructor() {
     this.queryInput$
@@ -122,25 +151,17 @@ export class SearchPageComponent {
         distinctUntilChanged(),
         switchMap((value) => {
           const trimmed = value.trim();
+          this.currentPage.set(1);
 
           if (!trimmed) {
             this.results.set([]);
             this.error.set(null);
+            this.totalCount.set(0);
+            this.hasNextPage.set(false);
             return of<GithubUser[]>([]);
           }
 
-          this.searching.set(true);
-          this.error.set(null);
-
-          return from(this.githubApi.searchUsers(trimmed)).pipe(
-            catchError(() => {
-              this.error.set('Unable to search GitHub users right now.');
-              return of<GithubUser[]>([]);
-            }),
-            finalize(() => {
-              this.searching.set(false);
-            }),
-          );
+          return from(this.runSearch(trimmed, 1));
         }),
         takeUntilDestroyed(this.destroyRef),
       )
@@ -163,6 +184,26 @@ export class SearchPageComponent {
     this.queryInput$.next(value);
   }
 
+  async goToPreviousPage(): Promise<void> {
+    const trimmed = this.query().trim();
+
+    if (!trimmed || this.currentPage() <= 1) {
+      return;
+    }
+
+    await this.runSearch(trimmed, this.currentPage() - 1);
+  }
+
+  async goToNextPage(): Promise<void> {
+    const trimmed = this.query().trim();
+
+    if (!trimmed || !this.hasNextPage()) {
+      return;
+    }
+
+    await this.runSearch(trimmed, this.currentPage() + 1);
+  }
+
   async onSubmitSearch(): Promise<void> {
     const trimmed = this.query().trim();
 
@@ -174,6 +215,27 @@ export class SearchPageComponent {
       await this.historyService.addEntry({ query: trimmed });
     } catch {
       this.error.set('Search ran, but history could not be saved.');
+    }
+  }
+
+  private async runSearch(query: string, page: number): Promise<GithubUser[]> {
+    this.searching.set(true);
+    this.error.set(null);
+
+    try {
+      const result = await this.githubApi.searchUsers(query, page);
+      this.currentPage.set(result.page);
+      this.totalCount.set(result.totalCount);
+      this.hasNextPage.set(result.hasNextPage);
+      this.results.set(result.items);
+      return result.items;
+    } catch (error) {
+      this.error.set(mapApiErrorToMessage(error, 'Unable to search GitHub users right now.'));
+      this.totalCount.set(0);
+      this.hasNextPage.set(false);
+      return [];
+    } finally {
+      this.searching.set(false);
     }
   }
 

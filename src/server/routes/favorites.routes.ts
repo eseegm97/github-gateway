@@ -4,11 +4,65 @@ import { connectDatabase } from '../database';
 import {
   CreateFavoritePayload,
   FavoriteProfileModel,
+  SERVER_FAVORITE_NOTE_MAX_LENGTH,
   UpdateFavoritePayload,
 } from '../models/favorite.model';
 import { RouteError, sendData } from './responses';
 
 export const favoritesRouter = Router();
+const NOTE_MAX_LENGTH = SERVER_FAVORITE_NOTE_MAX_LENGTH ?? 500;
+
+function isRouteErrorLike(error: unknown): error is RouteError {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as { status?: unknown; code?: unknown; message?: unknown };
+  return (
+    typeof candidate.status === 'number' &&
+    typeof candidate.code === 'string' &&
+    typeof candidate.message === 'string'
+  );
+}
+
+function normalizeNote(rawNote: unknown): string {
+  if (rawNote === undefined || rawNote === null) {
+    return '';
+  }
+
+  if (typeof rawNote !== 'string') {
+    throw new RouteError(400, 'BAD_REQUEST', 'note must be a string.');
+  }
+
+  if (rawNote.length > NOTE_MAX_LENGTH) {
+    throw new RouteError(
+      400,
+      'BAD_REQUEST',
+      `note cannot exceed ${NOTE_MAX_LENGTH} characters.`,
+    );
+  }
+
+  return rawNote;
+}
+
+function handleFavoritesPersistenceError(next: (error?: unknown) => void, error: unknown): void {
+  if (isRouteErrorLike(error)) {
+    next(error);
+    return;
+  }
+
+  if (error instanceof mongoose.Error.ValidationError || (error instanceof Error && error.name === 'ValidationError')) {
+    next(new RouteError(400, 'BAD_REQUEST', 'Favorite payload failed validation.', { cause: error.message }));
+    return;
+  }
+
+  if (error instanceof Error && /duplicate key/i.test(error.message)) {
+    next(error);
+    return;
+  }
+
+  next(new RouteError(503, 'DATABASE_FAILURE', 'Favorites database operation failed.', { cause: error }));
+}
 
 function buildFavoriteLookup(id: string): { $or: Array<Record<string, string>> } {
   const candidates: Array<Record<string, string>> = [{ login: id.toLowerCase() }];
@@ -29,7 +83,7 @@ favoritesRouter.get('/', async (_req, res, next) => {
       favorites.map((favorite) => favorite.toJSON()),
     );
   } catch (error) {
-    next(new RouteError(503, 'DATABASE_FAILURE', 'Unable to list favorites.', { cause: error }));
+    handleFavoritesPersistenceError(next, error);
   }
 });
 
@@ -55,12 +109,12 @@ favoritesRouter.post('/', async (req, res, next) => {
       login,
       avatarUrl,
       profileUrl,
-      note: payload.note ?? '',
+      note: normalizeNote(payload.note),
     });
 
     sendData(res, created.toJSON(), 201);
   } catch (error) {
-    next(error);
+    handleFavoritesPersistenceError(next, error);
   }
 });
 
@@ -79,7 +133,7 @@ favoritesRouter.put('/:id', async (req, res, next) => {
     const updates: { note?: string } = {};
 
     if (payload.note !== undefined) {
-      updates.note = payload.note;
+      updates.note = normalizeNote(payload.note);
     }
 
     if (payload.note === undefined) {
@@ -97,7 +151,7 @@ favoritesRouter.put('/:id', async (req, res, next) => {
 
     sendData(res, updated.toJSON());
   } catch (error) {
-    next(error);
+    handleFavoritesPersistenceError(next, error);
   }
 });
 
@@ -119,6 +173,6 @@ favoritesRouter.delete('/:id', async (req, res, next) => {
 
     res.status(204).send();
   } catch (error) {
-    next(error);
+    handleFavoritesPersistenceError(next, error);
   }
 });

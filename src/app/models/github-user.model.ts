@@ -14,3 +14,11 @@ export type GithubProfile = GithubUser & {
   followers: number;
   following: number;
 };
+
+export type GithubSearchResult = {
+  items: GithubUser[];
+  page: number;
+  perPage: number;
+  totalCount: number;
+  hasNextPage: boolean;
+};

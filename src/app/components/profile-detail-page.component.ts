@@ -4,7 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs/operators';
+import { FAVORITE_NOTE_MAX_LENGTH } from '../models/favorite.model';
 import { GithubProfile } from '../models/github-user.model';
+import { mapApiErrorToMessage } from '../services/api-error.util';
 import { FavoritesService } from '../services/favorites.service';
 import { GithubApiService } from '../services/github-api.service';
 import { HistoryService } from '../services/history.service';
@@ -52,7 +54,14 @@ import { HistoryService } from '../services/history.service';
           }
 
           <label for="favorite-note" class="form-label fw-semibold">Note</label>
-          <textarea id="favorite-note" class="form-control" [(ngModel)]="note" rows="3"></textarea>
+          <textarea
+            id="favorite-note"
+            class="form-control"
+            [(ngModel)]="note"
+            [attr.maxlength]="maxNoteLength"
+            rows="3"
+          ></textarea>
+          <div class="small text-secondary mt-1">{{ note.length }}/{{ maxNoteLength }} characters</div>
 
           <div class="actions mt-3">
             <button class="btn btn-primary" (click)="saveFavorite()" [disabled]="saving()">
@@ -123,6 +132,7 @@ export class ProfileDetailPageComponent {
   readonly error = signal<string | null>(null);
   readonly profile = signal<GithubProfile | null>(null);
   readonly existingFavoriteId = signal<string | null>(null);
+  readonly maxNoteLength = FAVORITE_NOTE_MAX_LENGTH;
 
   note = '';
 
@@ -157,8 +167,8 @@ export class ProfileDetailPageComponent {
         selectedLogin: profile.username,
         selectedAt: new Date().toISOString(),
       });
-    } catch {
-      this.error.set('Unable to load this profile.');
+    } catch (error) {
+      this.error.set(mapApiErrorToMessage(error, 'Unable to load this profile.'));
     } finally {
       this.loading.set(false);
     }
@@ -174,6 +184,12 @@ export class ProfileDetailPageComponent {
     this.saving.set(true);
     this.error.set(null);
 
+    if (this.note.length > this.maxNoteLength) {
+      this.error.set(`Notes cannot exceed ${this.maxNoteLength} characters.`);
+      this.saving.set(false);
+      return;
+    }
+
     try {
       const existingId = this.existingFavoriteId();
 
@@ -186,8 +202,8 @@ export class ProfileDetailPageComponent {
         const created = await this.favoritesService.addFromProfile(profile, this.note);
         this.existingFavoriteId.set(created.id);
       }
-    } catch {
-      this.error.set('Unable to save favorite right now.');
+    } catch (error) {
+      this.error.set(mapApiErrorToMessage(error, 'Unable to save favorite right now.'));
     } finally {
       this.saving.set(false);
     }

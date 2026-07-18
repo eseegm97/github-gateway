@@ -50,25 +50,61 @@ describe('SearchPageComponent', () => {
   });
 
   it('searches with debounce and updates result list', async () => {
-    githubApiMock.searchUsers.mockResolvedValue([
-      { githubId: 1, username: 'octocat', avatarUrl: 'a', profileUrl: 'p' },
-    ]);
+    githubApiMock.searchUsers.mockResolvedValue({
+      items: [{ githubId: 1, username: 'octocat', avatarUrl: 'a', profileUrl: 'p' }],
+      page: 1,
+      perPage: 10,
+      totalCount: 1,
+      hasNextPage: false,
+    });
 
     component.onQueryChange('octocat');
     await wait(380);
 
-    expect(githubApiMock.searchUsers).toHaveBeenCalledWith('octocat');
+    expect(githubApiMock.searchUsers).toHaveBeenCalledWith('octocat', 1);
     expect(component.results()[0]?.username).toBe('octocat');
   });
 
   it('hydrates search query from route params (select/revisit flow)', async () => {
-    githubApiMock.searchUsers.mockResolvedValue([]);
+    githubApiMock.searchUsers.mockResolvedValue({
+      items: [],
+      page: 1,
+      perPage: 10,
+      totalCount: 0,
+      hasNextPage: false,
+    });
 
     queryParamMap$.next(convertToParamMap({ q: 'from-history' }));
     await wait(380);
 
     expect(component.query()).toBe('from-history');
-    expect(githubApiMock.searchUsers).toHaveBeenCalledWith('from-history');
+    expect(githubApiMock.searchUsers).toHaveBeenCalledWith('from-history', 1);
+  });
+
+  it('loads next page when available', async () => {
+    githubApiMock.searchUsers
+      .mockResolvedValueOnce({
+        items: [{ githubId: 1, username: 'octocat', avatarUrl: 'a', profileUrl: 'p' }],
+        page: 1,
+        perPage: 10,
+        totalCount: 20,
+        hasNextPage: true,
+      })
+      .mockResolvedValueOnce({
+        items: [{ githubId: 2, username: 'octocat-2', avatarUrl: 'a2', profileUrl: 'p2' }],
+        page: 2,
+        perPage: 10,
+        totalCount: 20,
+        hasNextPage: false,
+      });
+
+    component.onQueryChange('octocat');
+    await wait(380);
+    await component.goToNextPage();
+
+    expect(githubApiMock.searchUsers).toHaveBeenNthCalledWith(2, 'octocat', 2);
+    expect(component.currentPage()).toBe(2);
+    expect(component.results()[0]?.username).toBe('octocat-2');
   });
 
   it('saves search to history with trimmed query', async () => {

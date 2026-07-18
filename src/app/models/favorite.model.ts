@@ -1,3 +1,5 @@
+export const FAVORITE_NOTE_MAX_LENGTH = 500;
+
 export type Favorite = {
   id: string;
   githubId: number;

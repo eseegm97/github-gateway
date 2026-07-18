@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { mapApiErrorToMessage } from '../services/api-error.util';
 import { HistoryService } from '../services/history.service';
 
 @Component({
@@ -92,8 +93,8 @@ export class HistoryPageComponent {
 
     try {
       await this.historyService.refresh();
-    } catch {
-      this.error.set('Unable to load history.');
+    } catch (error) {
+      this.error.set(mapApiErrorToMessage(error, 'Unable to load history.'));
     } finally {
       this.loading.set(false);
     }
@@ -101,9 +102,10 @@ export class HistoryPageComponent {
 
   async clearHistory(): Promise<void> {
     try {
+      this.error.set(null);
       await this.historyService.clear();
-    } catch {
-      this.error.set('Unable to clear history right now.');
+    } catch (error) {
+      this.error.set(mapApiErrorToMessage(error, 'Unable to clear history right now.'));
     }
   }
 }

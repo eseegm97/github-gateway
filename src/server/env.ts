@@ -4,12 +4,16 @@ export type AppEnv = {
   mongodbUri: string;
   port: number;
   corsOrigin: string;
+  searchDefaultPerPage: number;
+  searchMaxPerPage: number;
 };
 
 const DEFAULT_GITHUB_API_BASE_URL = 'https://api.github.com';
 const DEFAULT_MONGODB_URI = 'mongodb://127.0.0.1:27017/github-gateway';
 const DEFAULT_PORT = 4000;
 const DEFAULT_CORS_ORIGIN = 'http://localhost:4200';
+const DEFAULT_SEARCH_DEFAULT_PER_PAGE = 10;
+const DEFAULT_SEARCH_MAX_PER_PAGE = 25;
 
 type EnvSource = Record<string, string | undefined>;
 
@@ -21,6 +25,19 @@ function parsePort(value?: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
     throw new Error('Invalid PORT value. Expected an integer between 1 and 65535.');
+  }
+
+  return parsed;
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number, variableName: string): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid ${variableName} value. Expected a positive integer.`);
   }
 
   return parsed;
@@ -41,6 +58,21 @@ function getDefaultEnvSource(): EnvSource {
 }
 
 export function loadEnv(source: EnvSource = getDefaultEnvSource()): AppEnv {
+  const searchDefaultPerPage = parsePositiveInt(
+    source['SEARCH_DEFAULT_PER_PAGE'],
+    DEFAULT_SEARCH_DEFAULT_PER_PAGE,
+    'SEARCH_DEFAULT_PER_PAGE',
+  );
+  const searchMaxPerPage = parsePositiveInt(
+    source['SEARCH_MAX_PER_PAGE'],
+    DEFAULT_SEARCH_MAX_PER_PAGE,
+    'SEARCH_MAX_PER_PAGE',
+  );
+
+  if (searchDefaultPerPage > searchMaxPerPage) {
+    throw new Error('SEARCH_DEFAULT_PER_PAGE cannot be greater than SEARCH_MAX_PER_PAGE.');
+  }
+
   return {
     githubToken: source['GITHUB_TOKEN'] ?? '',
     githubApiBaseUrl: assertValidUrl(
@@ -50,6 +82,8 @@ export function loadEnv(source: EnvSource = getDefaultEnvSource()): AppEnv {
     mongodbUri: source['MONGODB_URI'] ?? DEFAULT_MONGODB_URI,
     port: parsePort(source['PORT']),
     corsOrigin: assertValidUrl(source['CORS_ORIGIN'] ?? DEFAULT_CORS_ORIGIN, 'CORS_ORIGIN'),
+    searchDefaultPerPage,
+    searchMaxPerPage,
   };
 }
 

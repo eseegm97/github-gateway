@@ -4,6 +4,7 @@ import { GithubUserProfile, GithubUserSummary } from '../models/github.model';
 import { RouteError, sendData } from './responses';
 
 type GithubSearchResponse = {
+  total_count?: number;
   items?: Array<{
     id: number;
     login: string;
@@ -24,6 +25,20 @@ type GithubUserResponse = {
   public_repos: number;
   followers: number;
   following: number;
+};
+
+type SearchQuery = {
+  query: string;
+  page: number;
+  perPage: number;
+};
+
+type PaginatedSearchResult = {
+  items: GithubUserSummary[];
+  page: number;
+  perPage: number;
+  totalCount: number;
+  hasNextPage: boolean;
 };
 
 export function sortExactFirst(users: GithubUserSummary[], query: string): GithubUserSummary[] {
@@ -100,6 +115,41 @@ async function githubRequest<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+function parsePositiveIntegerFromQuery(
+  rawValue: unknown,
+  fallback: number,
+  fieldName: string,
+): number {
+  if (rawValue === undefined || rawValue === null || `${rawValue}`.trim() === '') {
+    return fallback;
+  }
+
+  const parsed = Number(rawValue);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new RouteError(400, 'BAD_REQUEST', `${fieldName} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function parseSearchQuery(req: { query: Record<string, unknown> }): SearchQuery {
+  const query = `${req.query['username'] ?? ''}`.trim();
+  const page = parsePositiveIntegerFromQuery(req.query['page'], 1, 'page');
+  const requestedPerPage = parsePositiveIntegerFromQuery(
+    req.query['perPage'],
+    env.searchDefaultPerPage,
+    'perPage',
+  );
+  const perPage = Math.min(requestedPerPage, env.searchMaxPerPage);
+
+  return {
+    query,
+    page,
+    perPage,
+  };
+}
+
 export function mergeExactAndPartialResults(
   query: string,
   exactMatch: GithubUserSummary | null,
@@ -117,10 +167,16 @@ export const githubRouter = Router();
 
 githubRouter.get('/search', async (req, res, next) => {
   try {
-    const query = `${req.query['username'] ?? ''}`.trim();
+    const { query, page, perPage } = parseSearchQuery(req as { query: Record<string, unknown> });
 
     if (!query) {
-      sendData(res, []);
+      sendData(res, {
+        items: [],
+        page,
+        perPage,
+        totalCount: 0,
+        hasNextPage: false,
+      } satisfies PaginatedSearchResult);
       return;
     }
 
@@ -136,12 +192,21 @@ githubRouter.get('/search', async (req, res, next) => {
 
     const params = new URLSearchParams({
       q: `${query} in:login`,
-      per_page: '10',
+      page: `${page}`,
+      per_page: `${perPage}`,
     });
     const raw = await githubRequest<GithubSearchResponse>(`/search/users?${params.toString()}`);
 
     const users = (raw.items ?? []).map(toSummary);
-    sendData(res, mergeExactAndPartialResults(query, exactMatch, users));
+    const mergedUsers = mergeExactAndPartialResults(query, exactMatch, users);
+    const totalCount = Math.max(raw.total_count ?? mergedUsers.length, mergedUsers.length);
+    sendData(res, {
+      items: mergedUsers,
+      page,
+      perPage,
+      totalCount,
+      hasNextPage: page * perPage < totalCount,
+    } satisfies PaginatedSearchResult);
   } catch (error) {
     next(error);
   }

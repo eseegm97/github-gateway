@@ -15,7 +15,13 @@ describe('GithubApiService', () => {
 
     const result = await service.searchUsers('   ');
 
-    expect(result).toEqual([]);
+    expect(result).toEqual({
+      items: [],
+      page: 1,
+      perPage: 10,
+      totalCount: 0,
+      hasNextPage: false,
+    });
     http.expectNone('/api/github/search');
   });
 
@@ -27,17 +33,29 @@ describe('GithubApiService', () => {
     const service = TestBed.inject(GithubApiService);
     const http = TestBed.inject(HttpTestingController);
 
-    const promise = service.searchUsers('octocat');
+    const promise = service.searchUsers('octocat', 2, 15);
     const request = http.expectOne((req) => req.url === '/api/github/search');
 
     expect(request.request.params.get('username')).toBe('octocat');
+    expect(request.request.params.get('page')).toBe('2');
+    expect(request.request.params.get('perPage')).toBe('15');
     request.flush({
-      data: [{ githubId: 1, username: 'octocat', avatarUrl: 'a', profileUrl: 'p' }],
+      data: {
+        items: [{ githubId: 1, username: 'octocat', avatarUrl: 'a', profileUrl: 'p' }],
+        page: 2,
+        perPage: 15,
+        totalCount: 30,
+        hasNextPage: true,
+      },
     });
 
-    await expect(promise).resolves.toEqual([
-      { githubId: 1, username: 'octocat', avatarUrl: 'a', profileUrl: 'p' },
-    ]);
+    await expect(promise).resolves.toEqual({
+      items: [{ githubId: 1, username: 'octocat', avatarUrl: 'a', profileUrl: 'p' }],
+      page: 2,
+      perPage: 15,
+      totalCount: 30,
+      hasNextPage: true,
+    });
   });
 
   it('propagates profile endpoint errors', async () => {

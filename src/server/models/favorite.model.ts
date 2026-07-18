@@ -1,12 +1,14 @@
 import mongoose, { InferSchemaType } from 'mongoose';
 
+export const SERVER_FAVORITE_NOTE_MAX_LENGTH = 500;
+
 const favoriteProfileSchema = new mongoose.Schema(
   {
     githubId: { type: Number, required: true, unique: true, index: true },
     login: { type: String, required: true, trim: true, lowercase: true, unique: true, index: true },
     avatarUrl: { type: String, required: true },
     profileUrl: { type: String, required: true },
-    note: { type: String, default: '' },
+    note: { type: String, default: '', maxlength: SERVER_FAVORITE_NOTE_MAX_LENGTH },
   },
   {
     timestamps: true,

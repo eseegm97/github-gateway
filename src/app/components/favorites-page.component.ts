@@ -2,7 +2,8 @@ import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Favorite } from '../models/favorite.model';
+import { FAVORITE_NOTE_MAX_LENGTH, Favorite } from '../models/favorite.model';
+import { mapApiErrorToMessage } from '../services/api-error.util';
 import { FavoritesService } from '../services/favorites.service';
 
 type FavoriteDraft = {
@@ -50,8 +51,12 @@ type FavoriteDraft = {
                   class="form-control"
                   [ngModel]="draftFor(favorite).note"
                   (ngModelChange)="onDraftNoteChange(favorite, $event)"
+                  [attr.maxlength]="maxNoteLength"
                   rows="2"
                 ></textarea>
+                <div class="small text-secondary">
+                  {{ draftFor(favorite).note.length }}/{{ maxNoteLength }} characters
+                </div>
 
                 <div class="actions mt-3">
                   <button class="btn btn-primary" (click)="saveFavorite(favorite)">Save</button>
@@ -102,6 +107,7 @@ export class FavoritesPageComponent {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly drafts = signal<Record<string, FavoriteDraft>>({});
+  readonly maxNoteLength = FAVORITE_NOTE_MAX_LENGTH;
 
   constructor() {
     void this.loadFavorites();
@@ -136,22 +142,29 @@ export class FavoritesPageComponent {
   async saveFavorite(favorite: Favorite): Promise<void> {
     const draft = this.draftFor(favorite);
 
+    if (draft.note.length > this.maxNoteLength) {
+      this.error.set(`Notes cannot exceed ${this.maxNoteLength} characters.`);
+      return;
+    }
+
     try {
+      this.error.set(null);
       await this.favoritesService.updateFavorite(this.favoriteKey(favorite), {
         note: draft.note,
       });
       this.syncDrafts();
-    } catch {
-      this.error.set(`Unable to save changes for ${favorite.login}.`);
+    } catch (error) {
+      this.error.set(mapApiErrorToMessage(error, `Unable to save changes for ${favorite.login}.`));
     }
   }
 
   async removeFavorite(favorite: Favorite): Promise<void> {
     try {
+      this.error.set(null);
       await this.favoritesService.deleteFavorite(favorite.id);
       this.syncDrafts();
-    } catch {
-      this.error.set(`Unable to remove ${favorite.login}.`);
+    } catch (error) {
+      this.error.set(mapApiErrorToMessage(error, `Unable to remove ${favorite.login}.`));
     }
   }
 

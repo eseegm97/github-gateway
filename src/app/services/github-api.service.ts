@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { GithubProfile, GithubUser } from '../models/github-user.model';
+import { GithubProfile, GithubSearchResult } from '../models/github-user.model';
 
 type ApiEnvelope<T> = {
   data: T;
@@ -11,16 +11,31 @@ type ApiEnvelope<T> = {
 export class GithubApiService {
   private readonly http = inject(HttpClient);
 
-  async searchUsers(username: string): Promise<GithubUser[]> {
+  async searchUsers(username: string, page = 1, perPage?: number): Promise<GithubSearchResult> {
     const query = username.trim();
 
     if (!query) {
-      return [];
+      return {
+        items: [],
+        page,
+        perPage: perPage ?? 10,
+        totalCount: 0,
+        hasNextPage: false,
+      };
+    }
+
+    const params: Record<string, string> = {
+      username: query,
+      page: `${page}`,
+    };
+
+    if (perPage !== undefined) {
+      params['perPage'] = `${perPage}`;
     }
 
     const response = await firstValueFrom(
-      this.http.get<ApiEnvelope<GithubUser[]>>('/api/github/search', {
-        params: { username: query },
+      this.http.get<ApiEnvelope<GithubSearchResult>>('/api/github/search', {
+        params,
       }),
     );
 

@@ -77,6 +77,7 @@ describe('githubRouter', () => {
         html_url: 'exact-profile',
       }),
       jsonResponse({
+        total_count: 3,
         items: [
           { id: 200, login: 'ExactUser', avatar_url: 'exact-avatar', html_url: 'exact-profile' },
           { id: 100, login: 'z-user', avatar_url: 'z-avatar', html_url: 'z-profile' },
@@ -88,17 +89,20 @@ describe('githubRouter', () => {
     const response = await request(buildApp()).get('/github/search').query({ username: 'exactuser' });
 
     expect(response.status).toBe(200);
-    expect(response.body.data.map((item: { username: string }) => item.username)).toEqual([
+    expect(response.body.data.items.map((item: { username: string }) => item.username)).toEqual([
       'ExactUser',
       'a-user',
       'z-user',
     ]);
+    expect(response.body.data.page).toBe(1);
+    expect(response.body.data.perPage).toBe(10);
   });
 
   it('returns partial matches when exact lookup is not found', async () => {
     mockFetchSequence([
       new Response('missing', { status: 404 }),
       jsonResponse({
+        total_count: 1,
         items: [{ id: 100, login: 'partial-user', avatar_url: 'p-avatar', html_url: 'p-profile' }],
       }),
     ]);
@@ -106,8 +110,40 @@ describe('githubRouter', () => {
     const response = await request(buildApp()).get('/github/search').query({ username: 'partial' });
 
     expect(response.status).toBe(200);
-    expect(response.body.data).toHaveLength(1);
-    expect(response.body.data[0].username).toBe('partial-user');
+    expect(response.body.data.items).toHaveLength(1);
+    expect(response.body.data.items[0].username).toBe('partial-user');
+  });
+
+  it('applies pagination query values and caps perPage to configured max', async () => {
+    mockFetchSequence([
+      new Response('missing', { status: 404 }),
+      jsonResponse({
+        total_count: 200,
+        items: [{ id: 100, login: 'paged-user', avatar_url: 'p-avatar', html_url: 'p-profile' }],
+      }),
+    ]);
+
+    const response = await request(buildApp())
+      .get('/github/search')
+      .query({ username: 'paged', page: '2', perPage: '1000' });
+
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.page).toBe(2);
+    expect(response.body.data.perPage).toBe(25);
+    expect(response.body.data.hasNextPage).toBe(true);
+    expect(fetchMock.mock.calls[1][0]).toContain('page=2');
+    expect(fetchMock.mock.calls[1][0]).toContain('per_page=25');
+  });
+
+  it('returns bad request when page is invalid', async () => {
+    const response = await request(buildApp())
+      .get('/github/search')
+      .query({ username: 'paged', page: '0' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('BAD_REQUEST');
   });
 
   it('maps GitHub user not found to 404 on profile endpoint', async () => {

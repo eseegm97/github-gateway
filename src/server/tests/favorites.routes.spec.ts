@@ -19,6 +19,7 @@ vi.mock('../database', () => ({
 }));
 
 vi.mock('../models/favorite.model', () => ({
+  SERVER_FAVORITE_NOTE_MAX_LENGTH: 500,
   FavoriteProfileModel: mocks.favoriteModel,
 }));
 
@@ -105,6 +106,15 @@ describe('favoritesRouter', () => {
     const response = await request(buildApp())
       .put('/favorites/64b90f15b98e4f0f4bbf9a40')
       .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('BAD_REQUEST');
+  });
+
+  it('rejects note updates that exceed the max length', async () => {
+    const response = await request(buildApp())
+      .put('/favorites/64b90f15b98e4f0f4bbf9a40')
+      .send({ note: 'x'.repeat(501) });
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('BAD_REQUEST');
